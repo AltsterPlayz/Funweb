@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Geometry Dash Mini – Level Version</title>
+  <style>
+    body {
+      margin: 0;
+      background: #020617;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: Arial, sans-serif;
+      color: white;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    h1 {
+      margin: 5px 0;
+    }
+
+    #info {
+      margin-bottom: 4px;
+      font-size: 13px;
+      color: #cbd5f5;
+    }
+
+    #hud {
+      margin-bottom: 6px;
+      font-size: 16px;
+    }
+
+    canvas {
+      background: #020617;
+      border: 3px solid #38bdf8;
+      box-shadow: 0 0 20px #38bdf8;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Geometry Dash Mini – Level Mode</h1>
+  <div id="info">Click or press SPACE to jump • Reach the end of the level</div>
+  <div id="hud">
+    Score: <span id="score">0</span> • Attempts: <span id="attempts">1</span>
+  </div>
+  <canvas id="game" width="900" height="300"></canvas>
+
+  <!-- Simple background music (royalty-free style placeholder) -->
+  <audio id="music" loop>
+    <source src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_7b9b9d9f9b.mp3?filename=arcade-funk-110381.mp3" type="audio/mpeg">
+  </audio>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const scoreEl = document.getElementById("score");
+    const attemptsEl = document.getElementById("attempts");
+    const music = document.getElementById("music");
+
+    const groundY = canvas.height - 40;
+    const gravity = 0.7;
+
+    let gameOver = false;
+    let levelComplete = false;
+    let score = 0;
+    let attempts = 1;
+
+    // Player
+    const player = {
+      x: 120,
+      y: groundY - 40,
+      w: 30,
+      h: 30,
+      vy: 0,
+      jumping: false
+    };
+
+    // Level pattern (pre‑designed obstacles)
+    // Each entry is distance from start in pixels
+    const levelLength = 4000;
+    const levelObstacles = [
+      400, 600, 800,
+      1100, 1300,
+      1600, 1700, 1900,
+      2200, 2400, 2600,
+      2900, 3100, 3300, 3500
+    ];
+
+    let obstacles = [];
+    let cameraX = 0; // how far we've scrolled
+
+    function buildLevel() {
+      obstacles = levelObstacles.map(xPos => {
+        const width = 30;
+        const height = 40;
+        return {
+          baseX: xPos,
+          w: width,
+          h: height
+        };
+      });
+    }
+
+    buildLevel();
+
+    function resetRun() {
+      cameraX = 0;
+      player.y = groundY - player.h;
+      player.vy = 0;
+      player.jumping = false;
+      gameOver = false;
+      levelComplete = false;
+      score = 0;
+      scoreEl.textContent = score;
+      // restart music from beginning
+      music.currentTime = 0;
+      music.play().catch(() => {});
+    }
+
+    function fail() {
+      gameOver = true;
+      attempts++;
+      attemptsEl.textContent = attempts;
+      music.pause();
+    }
+
+    function completeLevel() {
+      levelComplete = true;
+      music.pause();
+    }
+
+    function jump() {
+      if (!player.jumping && !gameOver && !levelComplete) {
+        player.vy = -13;
+        player.jumping = true;
+      }
+      if (gameOver || levelComplete) {
+        resetRun();
+      }
+    }
+
+    document.addEventListener("keydown", e => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        jump();
+      }
+    });
+
+    canvas.addEventListener("mousedown", jump);
+
+    function updatePlayer() {
+      player.vy += gravity;
+      player.y += player.vy;
+
+      if (player.y + player.h >= groundY) {
+        player.y = groundY - player.h;
+        player.vy = 0;
+        player.jumping = false;
+      }
+    }
+
+    function updateCamera() {
+      if (!gameOver && !levelComplete) {
+        cameraX += 6; // constant forward speed
+        score = Math.floor(cameraX / 10);
+        scoreEl.textContent = score;
+      }
+      if (cameraX >= levelLength && !levelComplete) {
+        completeLevel();
+      }
+    }
+
+    function checkCollisions() {
+      const px = player.x + cameraX; // player position in level space
+
+      for (const o of obstacles) {
+        const ox = o.baseX - cameraX;
+        const oy = groundY - o.h;
+
+        if (
+          player.x < ox + o.w &&
+          player.x + player.w > ox &&
+          player.y < oy + o.h &&
+          player.y + player.h > oy
+        ) {
+          fail();
+        }
+      }
+    }
+
+    // Parallax background
+    function drawParallax() {
+      const t = cameraX * 0.2;
+
+      // Far mountains
+      ctx.fillStyle = "#020617";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = "#0b1220";
+      for (let i = -1; i < 5; i++) {
+        const baseX = (i * 300 - (t * 0.3) % 300);
+        ctx.beginPath();
+        ctx.moveTo(baseX, groundY - 80);
+        ctx.lineTo(baseX + 150, groundY - 180);
+        ctx.lineTo(baseX + 300, groundY - 80);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Mid hills
+      ctx.fillStyle = "#111827";
+      for (let i = -1; i < 6; i++) {
+        const baseX = (i * 200 - (t * 0.6) % 200);
+        ctx.beginPath();
+        ctx.arc(baseX, groundY - 30, 80, Math.PI, 0);
+        ctx.fill();
+      }
+    }
+
+    function drawGround() {
+      ctx.fillStyle = "#1e293b";
+      ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+
+      ctx.strokeStyle = "#0f172a";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, groundY);
+      ctx.lineTo(canvas.width, groundY);
+      ctx.stroke();
+    }
+
+    function drawPlayer() {
+      ctx.fillStyle = "#38bdf8";
+      ctx.fillRect(player.x, player.y, player.w, player.h);
+    }
+
+    function drawObstacles() {
+      ctx.fillStyle = "#f97316";
+      obstacles.forEach(o => {
+        const ox = o.baseX - cameraX;
+        const oy = groundY - o.h;
+
+        if (ox + o.w < 0 || ox > canvas.width) return;
+
+        ctx.beginPath();
+        ctx.moveTo(ox, oy + o.h);
+        ctx.lineTo(ox + o.w / 2, oy);
+        ctx.lineTo(ox + o.w, oy + o.h);
+        ctx.closePath();
+        ctx.fill();
+      });
+    }
+
+    function drawEndFlag() {
+      const flagX = levelLength - cameraX;
+      if (flagX < -50 || flagX > canvas.width + 50) return;
+
+      const baseY = groundY;
+      ctx.fillStyle = "#22c55e";
+      ctx.fillRect(flagX, baseY - 80, 6, 80);
+      ctx.fillStyle = "#facc15";
+      ctx.beginPath();
+      ctx.moveTo(flagX + 6, baseY - 80);
+      ctx.lineTo(flagX + 50, baseY - 65);
+      ctx.lineTo(flagX + 6, baseY - 50);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawOverlays() {
+      if (gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.font = "32px Arial";
+        ctx.fillText("You Died", canvas.width / 2 - 70, canvas.height / 2 - 10);
+        ctx.font = "18px Arial";
+        ctx.fillText("Click or press SPACE to try again", canvas.width / 2 - 160, canvas.height / 2 + 20);
+      } else if (levelComplete) {
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#22c55e";
+        ctx.font = "32px Arial";
+        ctx.fillText("Level Complete!", canvas.width / 2 - 120, canvas.height / 2 - 10);
+        ctx.fillStyle = "white";
+        ctx.font = "18px Arial";
+        ctx.fillText("Click or press SPACE to play again", canvas.width / 2 - 160, canvas.height / 2 + 20);
+      }
+    }
+
+    function update() {
+      if (!gameOver && !levelComplete) {
+        updatePlayer();
+        updateCamera();
+        checkCollisions();
+      }
+    }
+
+    function draw() {
+      drawParallax();
+      drawGround();
+      drawObstacles();
+      drawEndFlag();
+      drawPlayer();
+      drawOverlays();
+    }
+
+    function loop() {
+      update();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    // Start music on first interaction
+    document.addEventListener("click", () => {
+      if (music.paused && !gameOver && !levelComplete && cameraX === 0) {
+        music.play().catch(() => {});
+      }
+    }, { once: true });
+
+    resetRun();
+    loop();
+  </script>
+</body>
+</html>
