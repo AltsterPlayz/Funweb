@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Hacker OS Terminal</title>
+  <style>
+    body {
+      margin: 0;
+      background: black;
+      color: #00ffea;
+      font-family: "Courier New", monospace;
+      overflow: hidden;
+    }
+
+    #terminal {
+      padding: 20px;
+      white-space: pre-wrap;
+      font-size: 18px;
+      line-height: 1.3;
+    }
+
+    #controls {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      display: none;
+      z-index: 20;
+    }
+
+    button {
+      background: #00ffea;
+      border: none;
+      padding: 8px 14px;
+      margin-right: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      color: black;
+      font-weight: bold;
+    }
+
+    .glitch { animation: glitch 0.2s infinite; }
+    @keyframes glitch {
+      0% { text-shadow: 2px 0 red, -2px 0 blue; }
+      50% { text-shadow: -2px 0 red, 2px 0 blue; }
+      100% { text-shadow: 2px 0 red, -2px 0 blue; }
+    }
+
+    .flicker { animation: flicker 0.08s infinite; }
+    @keyframes flicker {
+      0% { opacity: 1; }
+      50% { opacity: 0.85; }
+      100% { opacity: 1; }
+    }
+
+    .scanlines {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,0.03) 0px,
+        rgba(255,255,255,0.03) 2px,
+        rgba(0,0,0,0.1) 3px
+      );
+      z-index: 5;
+    }
+
+    #matrixCanvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: none;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Desktop UI */
+    #desktop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(circle at top, #020617 0, #020617 40%, #000 100%);
+      display: none;
+      color: #e5f2ff;
+      font-family: system-ui, sans-serif;
+      z-index: 10;
+    }
+
+    #taskbar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 40px;
+      background: rgba(15,23,42,0.9);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      box-sizing: border-box;
+      color: #e5e7eb;
+      font-size: 14px;
+    }
+
+    .icon {
+      width: 70px;
+      text-align: center;
+      margin: 15px 10px;
+      cursor: pointer;
+      color: #e5f2ff;
+      font-size: 12px;
+    }
+
+    .icon img {
+      width: 32px;
+      height: 32px;
+      margin-bottom: 4px;
+      filter: drop-shadow(0 0 4px #22d3ee);
+    }
+
+    .window {
+      position: absolute;
+      top: 60px;
+      left: 80px;
+      width: 420px;
+      height: 260px;
+      background: rgba(15,23,42,0.95);
+      border: 1px solid #22d3ee;
+      box-shadow: 0 0 20px rgba(34,211,238,0.4);
+      display: none;
+      color: #e5e7eb;
+      font-size: 13px;
+    }
+
+    .window-header {
+      height: 28px;
+      background: linear-gradient(to right, #0f172a, #1e293b);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px;
+      box-sizing: border-box;
+      cursor: move;
+    }
+
+    .window-title {
+      font-weight: bold;
+      font-size: 12px;
+    }
+
+    .window-close {
+      cursor: pointer;
+      color: #f97373;
+      font-weight: bold;
+    }
+
+    .window-body {
+      padding: 8px;
+      box-sizing: border-box;
+      height: calc(100% - 28px);
+      overflow: auto;
+      font-family: "Courier New", monospace;
+    }
+
+    .file-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 2px 0;
+    }
+
+    .scan-line {
+      color: #22c55e;
+    }
+
+    .ai-line-user {
+      color: #38bdf8;
+    }
+
+    .ai-line-bot {
+      color: #a5b4fc;
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="matrixCanvas"></canvas>
+
+<div id="terminal"></div>
+
+<div id="controls">
+  <button onclick="toggleGlitch()">Glitch</button>
+  <button onclick="toggleFlicker()">Flicker</button>
+  <button onclick="toggleScanlines()">Scanlines</button>
+  <button onclick="toggleMatrix()">Matrix</button>
+  <button onclick="showDesktop()">Desktop</button>
+</div>
+
+<div id="scanLayer" class="scanlines" style="display:none;"></div>
+
+<!-- Desktop UI -->
+<div id="desktop">
+  <div id="desktopIcons">
+    <div class="icon" onclick="openWindow('explorerWindow')">
+      <img src="https://img.icons8.com/fluency/48/folder-invoices.png" alt="">
+      <div>Files</div>
+    </div>
+    <div class="icon" onclick="openWindow('scannerWindow')">
+      <img src="https://img.icons8.com/fluency/48/radar.png" alt="">
+      <div>Network</div>
+    </div>
+    <div class="icon" onclick="openWindow('terminalWindow')">
+      <img src="https://img.icons8.com/fluency/48/console.png" alt="">
+      <div>Terminal</div>
+    </div>
+    <div class="icon" onclick="openWindow('aiWindow')">
+      <img src="https://img.icons8.com/fluency/48/artificial-intelligence.png" alt="">
+      <div>AI Assistant</div>
+    </div>
+  </div>
+
+  <div id="taskbar">
+    <span>Hacker OS Desktop</span>
+    <span style="margin-left:auto;font-size:12px;">All visual. No real access.</span>
+  </div>
+
+  <!-- File Explorer -->
+  <div id="explorerWindow" class="window">
+    <div class="window-header">
+      <div class="window-title">File Explorer</div>
+      <div class="window-close" onclick="closeWindow('explorerWindow')">X</div>
+    </div>
+    <div class="window-body" id="explorerBody">
+      <div class="file-item"><span>/system/core.cfg</span><span>4 KB</span></div>
+      <div class="file-item"><span>/system/visual.module</span><span>12 KB</span></div>
+      <div class="file-item"><span>/logs/boot.log</span><span>32 KB</span></div>
+      <div class="file-item"><span>/net/hosts.map</span><span>8 KB</span></div>
+      <div class="file-item"><span>/ai/profile.dat</span><span>16 KB</span></div>
+      <div class="file-item"><span>/user/docs/notes.txt</span><span>2 KB</span></div>
+    </div>
+  </div>
+
+  <!-- Network Scanner -->
+  <div id="scannerWindow" class="window">
+    <div class="window-header">
+      <div class="window-title">Network Scanner</div>
+      <div class="window-close" onclick="closeWindow('scannerWindow')">X</div>
+    </div>
+    <div class="window-body" id="scannerBody">
+      <div>Scanning local network...</div>
+      <div id="scanOutput"></div>
+    </div>
+  </div>
+
+  <!-- Terminal Window (just mirrors main terminal text) -->
+  <div id="terminalWindow" class="window">
+    <div class="window-header">
+      <div class="window-title">Terminal</div>
+      <div class="window-close" onclick="closeWindow('terminalWindow')">X</div>
+    </div>
+    <div class="window-body">
+      <div style="font-size:12px;color:#9ca3af;">Use main window for input. This is a view-only mirror.</div>
+      <pre id="terminalMirror" style="margin-top:6px;"></pre>
+    </div>
+  </div>
+
+  <!-- AI Assistant -->
+  <div id="aiWindow" class="window">
+    <div class="window-header">
+      <div class="window-title">AI Assistant</div>
+      <div class="window-close" onclick="closeWindow('aiWindow')">X</div>
+    </div>
+    <div class="window-body" id="aiBody">
+      <div class="ai-line-bot">AI&gt; Online. Ask me anything (visually).</div>
+    </div>
+  </div>
+</div>
+
+<!-- Sounds -->
+<audio id="typeSound" src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_7b9b9d9f9b.mp3?filename=arcade-funk-110381.mp3"></audio>
+<audio id="beep" src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_7b9b9d9f9b.mp3?filename=arcade-funk-110381.mp3"></audio>
+<audio id="startupHum" src="https://cdn.pixabay.com/download/audio/2021/09/07/audio_4e6e9e0d4f.mp3?filename=deep-space-whoosh-90934.mp3" loop></audio>
+
+<script>
+  const terminal = document.getElementById("terminal");
+  const typeSound = document.getElementById("typeSound");
+  const beep = document.getElementById("beep");
+  const startupHum = document.getElementById("startupHum");
+  const terminalMirror = document.getElementById("terminalMirror");
+
+  let mode = "boot"; // boot → login → command
+  let index = 0, charIndex = 0, currentLine = "";
+
+  const bootLines = [
+    "BOOT SEQUENCE INITIALIZED...",
+    "Loading kernel modules...",
+    "Establishing secure uplink...",
+    "Decrypting system files...",
+    "Checking hardware status...",
+    "CPU: OK",
+    "RAM: OK",
+    "GPU: OK",
+    "Network Adapter: OK",
+    "",
+    "Starting services:",
+    " - AUTH_ENGINE",
+    " - NET_CORE",
+    " - VISUAL_MODULE",
+    " - SYS_MONITOR",
+    "",
+    "Running diagnostics...",
+    "████████████████████████████████████████ 100%",
+    "",
+    "SYSTEM ONLINE.",
+    "",
+    "LOGIN REQUIRED.",
+    ""
+  ];
+
+  startupHum.volume = 0.4;
+  startupHum.play().catch(()=>{});
+
+  function syncMirror() {
+    terminalMirror.textContent = terminal.textContent;
+  }
+
+  function typeLine() {
+    if (index >= bootLines.length) {
+      mode = "login";
+      terminal.textContent += "USERNAME: ";
+      syncMirror();
+      return;
+    }
+
+    const line = bootLines[index];
+
+    if (charIndex < line.length) {
+      currentLine += line[charIndex];
+      terminal.textContent += line[charIndex];
+      syncMirror();
+      typeSound.currentTime = 0;
+      typeSound.play().catch(()=>{});
+      charIndex++;
+      setTimeout(typeLine, 20);
+    } else {
+      terminal.textContent += "\n";
+      syncMirror();
+      index++;
+      charIndex = 0;
+      currentLine = "";
+      setTimeout(typeLine, 150);
+    }
+  }
+
+  typeLine();
+
+  // LOGIN
+  let username = "";
+  let password = "";
+  let enteringPassword = false;
+
+  document.addEventListener("keydown", e => {
+    if (mode !== "login") return;
+
+    if (e.key === "Enter") {
+      if (!enteringPassword) {
+        terminal.textContent += "\nPASSWORD: ";
+        syncMirror();
+        enteringPassword = true;
+      } else {
+        terminal.textContent += "\nACCESS GRANTED.\n\n";
+        syncMirror();
+        beep.play().catch(()=>{});
+        mode = "command";
+        showCommandPrompt();
+        document.getElementById("controls").style.display = "block";
+      }
+      return;
+    }
+
+    if (e.key.length === 1) {
+      if (!enteringPassword) {
+        username += e.key;
+        terminal.textContent += e.key;
+      } else {
+        password += e.key;
+        terminal.textContent += "*";
+      }
+      syncMirror();
+    }
+  });
+
+  // COMMAND MODE
+  let currentCommand = "";
+  let aiMode = false;
+
+  function showCommandPrompt() {
+    terminal.textContent += "root@system:~$ ";
+    syncMirror();
+  }
+
+  document.addEventListener("keydown", e => {
+    if (mode !== "command") return;
+
+    if (e.key === "Enter") {
+      const cmd = currentCommand.trim();
+      terminal.textContent += "\n";
+      syncMirror();
+      runCommand(cmd);
+      currentCommand = "";
+      return;
+    }
+
+    if (e.key.length === 1) {
+      currentCommand += e.key;
+      terminal.textContent += e.key;
+      syncMirror();
+    }
+  });
+
+  function runCommand(cmd) {
+    if (aiMode) {
+      handleAICommand(cmd);
+      showCommandPrompt();
+      return;
+    }
+
+    if (cmd === "help") {
+      terminal.textContent += "Available commands:\n";
+      terminal.textContent += " - run program\n";
+      terminal.textContent += " - matrix\n";
+      terminal.textContent += " - clear\n";
+      terminal.textContent += " - desktop\n";
+      terminal.textContent += " - ai\n\n";
+    } else if (cmd === "clear") {
+      terminal.textContent = "";
+    } else if (cmd === "run program") {
+      terminal.textContent += "Running program...\n";
+      runProgramAnimation();
+    } else if (cmd === "matrix") {
+      toggleMatrix();
+    } else if (cmd === "desktop") {
+      showDesktop();
+    } else if (cmd === "ai") {
+      terminal.textContent += "AI mode enabled. Type your message.\n";
+      aiMode = true;
+    } else {
+      terminal.textContent += "Unknown command.\n\n";
+    }
+    syncMirror();
+    showCommandPrompt();
+  }
+
+  // AI assistant (inside terminal)
+  function handleAICommand(text) {
+    const aiBody = document.getElementById("aiBody");
+    const userLine = document.createElement("div");
+    userLine.className = "ai-line-user";
+    userLine.textContent = "YOU> " + text;
+    aiBody.appendChild(userLine);
+
+    const botLine = document.createElement("div");
+    botLine.className = "ai-line-bot";
+    let reply = "AI> I received: \"" + text + "\". This is a visual-only assistant.";
+    if (text.toLowerCase().includes("status")) reply = "AI> All systems nominal. No real connections active.";
+    if (text.toLowerCase().includes("network")) reply = "AI> Network scan is simulated. No real devices touched.";
+    if (text.toLowerCase().includes("files")) reply = "AI> File explorer shows fake entries only.";
+    botLine.textContent = reply;
+    aiBody.appendChild(botLine);
+    aiBody.scrollTop = aiBody.scrollHeight;
+
+    terminal.textContent += "AI> Response sent to AI window.\n\n";
+    syncMirror();
+    aiMode = false;
+  }
+
+  // Program animation
+  function runProgramAnimation() {
+    const frames = [
+      "[=         ]",
+      "[==        ]",
+      "[====      ]",
+      "[======    ]",
+      "[========  ]",
+      "[==========]"
+    ];
+    let i = 0;
+    function animate() {
+      if (i >= frames.length) {
+        terminal.textContent += "Program complete.\n\n";
+        syncMirror();
+        return;
+      }
+      terminal.textContent += frames[i] + "\n";
+      syncMirror();
+      i++;
+      setTimeout(animate, 200);
+    }
+    animate();
+  }
+
+  // Glitch buttons
+  function toggleGlitch() {
+    terminal.classList.toggle("glitch");
+  }
+  function toggleFlicker() {
+    terminal.classList.toggle("flicker");
+  }
+  function toggleScanlines() {
+    const layer = document.getElementById("scanLayer");
+    layer.style.display = layer.style.display === "none" ? "block" : "none";
+  }
+
+  // Matrix
+  const matrixCanvas = document.getElementById("matrixCanvas");
+  const mtx = matrixCanvas.getContext("2d");
+
+  function toggleMatrix() {
+    matrixCanvas.style.display =
+      matrixCanvas.style.display === "none" ? "block" : "none";
+  }
+
+  function matrixRain() {
+    matrixCanvas.width = window.innerWidth;
+    matrixCanvas.height = window.innerHeight;
+
+    const letters = "01";
+    const fontSize = 16;
+    const columns = matrixCanvas.width / fontSize;
+    const drops = [];
+    for (let i = 0; i < columns; i++) drops[i] = 1;
+
+    function draw() {
+      mtx.fillStyle = "rgba(0,0,0,0.05)";
+      mtx.fillRect(0, 0, matrixCanvas.width, matrixCanvas.height);
+
+      mtx.fillStyle = "#00ff00";
+      mtx.font = fontSize + "px monospace";
+
+      for (let i = 0; i < drops.length; i++) {
+        const text = letters[Math.floor(Math.random() * letters.length)];
+        mtx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+        if (drops[i] * fontSize > matrixCanvas.height && Math.random() > 0.975)
+          drops[i] = 0;
+
+        drops[i]++;
+      }
+
+      requestAnimationFrame(draw);
+    }
+    draw();
+  }
+  matrixRain();
+
+  // Desktop
+  function showDesktop() {
+    document.getElementById("desktop").style.display = "block";
+  }
+
+  function openWindow(id) {
+    document.getElementById(id).style.display = "block";
+    if (id === "scannerWindow") startFakeScan();
+  }
+
+  function closeWindow(id) {
+    document.getElementById(id).style.display = "none";
+  }
+
+  // Fake network scan
+  function startFakeScan() {
+    const scanOutput = document.getElementById("scanOutput");
+    scanOutput.innerHTML = "";
+    const hosts = [
+      "192.168.0.2  - DEVICE: LAPTOP-01  - STATUS: ONLINE",
+      "192.168.0.5  - DEVICE: PHONE-ANDROID  - STATUS: ONLINE",
+      "192.168.0.10 - DEVICE: SMART-TV  - STATUS: IDLE",
+      "192.168.0.20 - DEVICE: UNKNOWN  - STATUS: TIMEOUT"
+    ];
+    let i = 0;
+    function step() {
+      if (i >= hosts.length) {
+        const done = document.createElement("div");
+        done.textContent = "Scan complete. (All simulated.)";
+        done.className = "scan-line";
+        scanOutput.appendChild(done);
+        return;
+      }
+      const line = document.createElement("div");
+      line.textContent = hosts[i];
+      line.className = "scan-line";
+      scanOutput.appendChild(line);
+      i++;
+      setTimeout(step, 400);
+    }
+    step();
+  }
+</script>
+
+</body>
+</html>
