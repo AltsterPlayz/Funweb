@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Mini Rocket League – Super Version</title>
+  <style>
+    body {
+      margin: 0;
+      background: #050816;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: white;
+      font-family: Arial, sans-serif;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    #menu, #pauseScreen {
+      position: absolute;
+      background: rgba(0,0,0,0.85);
+      padding: 30px;
+      border: 3px solid #00aaff;
+      text-align: center;
+      border-radius: 10px;
+      display: none;
+      z-index: 10;
+    }
+
+    #menu button, #pauseScreen button, #arenaBtn {
+      padding: 10px 20px;
+      margin-top: 10px;
+      font-size: 18px;
+      background: #00aaff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: white;
+    }
+
+    #arenaBtn {
+      margin-bottom: 5px;
+    }
+
+    #score {
+      margin-bottom: 5px;
+    }
+
+    #boostBarContainer {
+      width: 200px;
+      height: 15px;
+      border: 2px solid #00aaff;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+
+    #boostBar {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, #22c55e, #facc15, #f97316);
+      transition: width 0.1s;
+    }
+
+    #countdown {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 60px;
+      text-shadow: 0 0 15px #00aaff;
+      display: none;
+      z-index: 9;
+    }
+
+    #explosionText {
+      position: absolute;
+      top: 20%;
+      font-size: 40px;
+      color: #facc15;
+      text-shadow: 0 0 15px #f97316;
+      display: none;
+      z-index: 9;
+    }
+
+    canvas {
+      background: #0b1220;
+      border: 3px solid #00aaff;
+      box-shadow: 0 0 20px #00aaff;
+    }
+
+    select {
+      margin-top: 10px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      border: 1px solid #00aaff;
+      background: #020617;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="menu">
+    <h1>Mini Rocket League</h1>
+    <p>Mode:</p>
+    <select id="modeSelect">
+      <option value="ai">Player vs AI</option>
+      <option value="pvp">Two Players</option>
+    </select>
+    <p>AI Difficulty:</p>
+    <select id="difficultySelect">
+      <option value="1.5">Easy</option>
+      <option value="2">Normal</option>
+      <option value="3">Hard</option>
+    </select>
+    <br>
+    <button onclick="startGame()">Start Game</button>
+  </div>
+
+  <div id="pauseScreen">
+    <h2>Paused</h2>
+    <button onclick="resumeGame()">Resume</button>
+  </div>
+
+  <div id="countdown"></div>
+  <div id="explosionText">GOAL EXPLOSION!</div>
+
+  <button id="arenaBtn" onclick="changeArena()">Change Arena</button>
+  <div id="score">Score: 0</div>
+  <div id="boostBarContainer">
+    <div id="boostBar"></div>
+  </div>
+  <canvas id="field" width="900" height="450"></canvas>
+
+  <script>
+    const canvas = document.getElementById("field");
+    const ctx = canvas.getContext("2d");
+    const scoreEl = document.getElementById("score");
+    const menu = document.getElementById("menu");
+    const pauseScreen = document.getElementById("pauseScreen");
+    const countdownEl = document.getElementById("countdown");
+    const explosionText = document.getElementById("explosionText");
+    const boostBar = document.getElementById("boostBar");
+    const modeSelect = document.getElementById("modeSelect");
+    const difficultySelect = document.getElementById("difficultySelect");
+
+    let paused = true;
+    let score = 0;
+    let mode = "ai"; // "ai" or "pvp"
+    let aiSpeedBase = 2;
+
+    // Arena colors
+    const arenas = ["#0b1220", "#1a1f33", "#002b36", "#003300", "#1f2933"];
+    let arenaIndex = 0;
+
+    function changeArena() {
+      arenaIndex = (arenaIndex + 1) % arenas.length;
+      canvas.style.background = arenas[arenaIndex];
+    }
+
+    // Car (Player 1)
+    let car = {
+      x: 150,
+      y: canvas.height / 2,
+      w: 40,
+      h: 20,
+      vx: 0,
+      vy: 0,
+      angle: 0,
+      speed: 0.4,
+      maxSpeed: 6,
+      friction: 0.94,
+      boost: 100,
+      boosting: false
+    };
+
+    // Car 2 (AI or Player 2)
+    let car2 = {
+      x: canvas.width - 150,
+      y: canvas.height / 2,
+      w: 40,
+      h: 20,
+      vx: 0,
+      vy: 0,
+      angle: Math.PI,
+      speed: 0.4,
+      maxSpeed: 6,
+      friction: 0.94
+    };
+
+    // Ball
+    let ball = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      r: 12,
+      vx: 0,
+      vy: 0
+    };
+
+    const goal = {
+      x: canvas.width - 40,
+      y: canvas.height / 2 - 70,
+      w: 20,
+      h: 140
+    };
+
+    // Ball trail
+    const trail = [];
+    const maxTrail = 15;
+
+    // Keys
+    let keys = {};
+
+    document.addEventListener("keydown", e => {
+      keys[e.key.toLowerCase()] = true;
+      if (e.key === "Escape") togglePause();
+    });
+
+    document.addEventListener("keyup", e => {
+      keys[e.key.toLowerCase()] = false;
+    });
+
+    function startGame() {
+      mode = modeSelect.value;
+      aiSpeedBase = parseFloat(difficultySelect.value);
+      score = 0;
+      scoreEl.textContent = "Score: " + score;
+      car.boost = 100;
+      boostBar.style.width = "100%";
+      menu.style.display = "none";
+      kickoff();
+    }
+
+    function kickoff() {
+      paused = true;
+      ball.x = canvas.width / 2;
+      ball.y = canvas.height / 2;
+      ball.vx = 0;
+      ball.vy = 0;
+      car.x = 150;
+      car.y = canvas.height / 2;
+      car.vx = car.vy = 0;
+      car.angle = 0;
+      car2.x = canvas.width - 150;
+      car2.y = canvas.height / 2;
+      car2.vx = car2.vy = 0;
+      car2.angle = Math.PI;
+
+      let count = 3;
+      countdownEl.style.display = "block";
+      countdownEl.textContent = count;
+
+      const timer = setInterval(() => {
+        count--;
+        if (count > 0) {
+          countdownEl.textContent = count;
+        } else {
+          clearInterval(timer);
+          countdownEl.style.display = "none";
+          ball.vx = Math.random() > 0.5 ? 4 : -4;
+          ball.vy = (Math.random() - 0.5) * 4;
+          paused = false;
+        }
+      }, 800);
+    }
+
+    function togglePause() {
+      if (menu.style.display === "block") return;
+      if (paused) resumeGame();
+      else pauseGame();
+    }
+
+    function pauseGame() {
+      paused = true;
+      pauseScreen.style.display = "block";
+    }
+
+    function resumeGame() {
+      pauseScreen.style.display = "none";
+      paused = false;
+    }
+
+    function resetBallWithExplosion() {
+      explosionText.style.display = "block";
+      setTimeout(() => {
+        explosionText.style.display = "none";
+      }, 700);
+      kickoff();
+    }
+
+    function updateCar(carObj, controls) {
+      // Rotation
+      if (controls.left) carObj.angle -= 0.06;
+      if (controls.right) carObj.angle += 0.06;
+
+      // Throttle
+      if (controls.up) {
+        carObj.vx += Math.cos(carObj.angle) * carObj.speed;
+        carObj.vy += Math.sin(carObj.angle) * carObj.speed;
+      }
+      if (controls.down) {
+        carObj.vx -= Math.cos(carObj.angle) * carObj.speed * 0.5;
+        carObj.vy -= Math.sin(carObj.angle) * carObj.speed * 0.5;
+      }
+
+      // Drift (slightly more slide)
+      if (controls.drift) {
+        carObj.friction = 0.9;
+      } else {
+        carObj.friction = 0.94;
+      }
+
+      // Limit speed
+      const spd = Math.hypot(carObj.vx, carObj.vy);
+      if (spd > carObj.maxSpeed) {
+        carObj.vx = (carObj.vx / spd) * carObj.maxSpeed;
+        carObj.vy = (carObj.vy / spd) * carObj.maxSpeed;
+      }
+
+      // Apply friction
+      carObj.vx *= carObj.friction;
+      carObj.vy *= carObj.friction;
+
+      // Move
+      carObj.x += carObj.vx;
+      carObj.y += carObj.vy;
+
+      // Bounds
+      if (carObj.x < 0) carObj.x = 0;
+      if (carObj.x + carObj.w > canvas.width) carObj.x = canvas.width - carObj.w;
+      if (carObj.y < 0) carObj.y = 0;
+      if (carObj.y + carObj.h > canvas.height) carObj.y = canvas.height - carObj.h;
+    }
+
+    function updateAI() {
+      // Simple AI: rotate toward ball, move forward
+      const dx = ball.x - car2.x;
+      const dy = ball.y - car2.y;
+      const targetAngle = Math.atan2(dy, dx);
+      let diff = targetAngle - car2.angle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+
+      if (diff > 0.05) car2.angle += 0.05;
+      else if (diff < -0.05) car2.angle -= 0.05;
+
+      car2.vx += Math.cos(car2.angle) * 0.25 * aiSpeedBase;
+      car2.vy += Math.sin(car2.angle) * 0.25 * aiSpeedBase;
+
+      const spd = Math.hypot(car2.vx, car2.vy);
+      if (spd > car2.maxSpeed) {
+        car2.vx = (car2.vx / spd) * car2.maxSpeed;
+        car2.vy = (car2.vy / spd) * car2.maxSpeed;
+      }
+
+      car2.vx *= car2.friction;
+      car2.vy *= car2.friction;
+
+      car2.x += car2.vx;
+      car2.y += car2.vy;
+
+      if (car2.x < 0) car2.x = 0;
+      if (car2.x + car2.w > canvas.width) car2.x = canvas.width - car2.w;
+      if (car2.y < 0) car2.y = 0;
+      if (car2.y + car2.h > canvas.height) car2.y = canvas.height - car2.h;
+    }
+
+    function updateBoost() {
+      // Space = boost
+      if (keys[" "] && car.boost > 0) {
+        car.vx += Math.cos(car.angle) * 0.4;
+        car.vy += Math.sin(car.angle) * 0.4;
+        car.boost -= 0.8;
+        if (car.boost < 0) car.boost = 0;
+      } else {
+        car.boost += 0.3;
+        if (car.boost > 100) car.boost = 100;
+      }
+      boostBar.style.width = car.boost + "%";
+    }
+
+    function update() {
+      if (paused) return;
+
+      // Player 1 controls (WASD + Shift drift)
+      updateCar(car, {
+        up: keys["w"],
+        down: keys["s"],
+        left: keys["a"],
+        right: keys["d"],
+        drift: keys["shift"]
+      });
+
+      // Player 2 or AI
+      if (mode === "pvp") {
+        updateCar(car2, {
+          up: keys["arrowup"],
+          down: keys["arrowdown"],
+          left: keys["arrowleft"],
+          right: keys["arrowright"],
+          drift: keys["/"]
+        });
+      } else {
+        updateAI();
+      }
+
+      updateBoost();
+
+      // Ball movement
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      // Trail
+      trail.push({ x: ball.x, y: ball.y });
+      if (trail.length > maxTrail) trail.shift();
+
+      // Wall bounce
+      if (ball.y - ball.r < 0 || ball.y + ball.r > canvas.height) {
+        ball.vy = -ball.vy;
+      }
+      if (ball.x - ball.r < 0) {
+        ball.vx = -ball.vx;
+      }
+
+      // Car-ball collisions
+      function carBallCollision(c) {
+        const cx = c.x + c.w / 2;
+        const cy = c.y + c.h / 2;
+        const dx = ball.x - cx;
+        const dy = ball.y - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < ball.r + 20) {
+          const angle = Math.atan2(dy, dx);
+          const force = 6;
+          ball.vx = Math.cos(angle) * force;
+          ball.vy = Math.sin(angle) * force;
+        }
+      }
+
+      carBallCollision(car);
+      carBallCollision(car2);
+
+      // Goal
+      if (
+        ball.x + ball.r > goal.x &&
+        ball.y > goal.y &&
+        ball.y < goal.y + goal.h
+      ) {
+        score++;
+        scoreEl.textContent = "Score: " + score;
+        resetBallWithExplosion();
+      }
+    }
+
+    function drawCar(c, color) {
+      ctx.save();
+      ctx.translate(c.x + c.w / 2, c.y + c.h / 2);
+      ctx.rotate(c.angle);
+      ctx.fillStyle = color;
+      ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h);
+      ctx.restore();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Field
+      ctx.fillStyle = arenas[arenaIndex];
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Mid line
+      ctx.strokeStyle = "#1f2937";
+      ctx.setLineDash([10, 10]);
+      ctx.beginPath();
+      ctx.moveTo(canvas.width / 2, 0);
+      ctx.lineTo(canvas.width / 2, canvas.height);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Center circle
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2, 70, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Goal
+      ctx.fillStyle = "#22c55e";
+      ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
+
+      // Ball trail
+      for (let i = 0; i < trail.length; i++) {
+        const t = trail[i];
+        const alpha = i / trail.length;
+        ctx.fillStyle = "rgba(250, 204, 21," + alpha + ")";
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, ball.r * (0.5 + alpha * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Ball
+      ctx.fillStyle = "#facc15";
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Cars
+      drawCar(car, "#00aaff");
+      drawCar(car2, mode === "pvp" ? "#ff00ff" : "#ff4444");
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    menu.style.display = "block";
+    changeArena();
+    loop();
+  </script>
+</body>
+</html>
